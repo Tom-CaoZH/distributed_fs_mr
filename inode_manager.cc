@@ -10,11 +10,13 @@ disk::disk()
 void
 disk::read_block(blockid_t id, char *buf)
 {
+  memcpy(buf, &this->blocks[id], BLOCK_SIZE);
 }
 
 void
 disk::write_block(blockid_t id, const char *buf)
 {
+  memcpy(&this->blocks[id], buf, sizeof(buf)); // not sure about this
 }
 
 // block layer -----------------------------------------
@@ -73,6 +75,7 @@ block_manager::write_block(uint32_t id, const char *buf)
 inode_manager::inode_manager()
 {
   bm = new block_manager();
+  inum = 0;
   uint32_t root_dir = alloc_inode(extent_protocol::T_DIR);
   if (root_dir != 1) {
     printf("\tim: error! alloc first inode %d, should be 1\n", root_dir);
@@ -90,7 +93,17 @@ inode_manager::alloc_inode(uint32_t type)
    * note: the normal inode block should begin from the 2nd inode block.
    * the 1st is used for root_dir, see inode_manager::inode_manager().
    */
-  return 1;
+  inode_t* new_node = new inode();
+  new_node->type = type;
+  new_node->size = 0;
+  time_t cur_time;
+  time(&cur_time);
+  new_node->atime = (unsigned int)cur_time;
+  new_node->ctime = (unsigned int)cur_time;
+  new_node->mtime = (unsigned int)cur_time;
+  this->inum++;
+  put_inode(this->inum, new_node);
+  return this->inum;
 }
 
 void
@@ -116,6 +129,9 @@ inode_manager::get_inode(uint32_t inum)
    * your code goes here.
    */
 
+  char buf[BLOCK_SIZE];
+  bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
+  ino = (struct inode*)buf;
   return ino;
 }
 
@@ -130,7 +146,7 @@ inode_manager::put_inode(uint32_t inum, struct inode *ino)
     return;
 
   bm->read_block(IBLOCK(inum, bm->sb.nblocks), buf);
-  ino_disk = (struct inode*)buf + inum%IPB;
+  ino_disk = (struct inode*)buf + inum%IPB; // Here `inum%IPB` == 0, so why we need this. In other case which is not zero, what will happen.
   *ino_disk = *ino;
   bm->write_block(IBLOCK(inum, bm->sb.nblocks), buf);
 }
@@ -173,7 +189,12 @@ inode_manager::get_attr(uint32_t inum, extent_protocol::attr &a)
    * note: get the attributes of inode inum.
    * you can refer to "struct attr" in extent_protocol.h
    */
-  
+  inode_t* inode = get_inode(inum);
+  a.atime = inode->atime;
+  a.ctime = inode->ctime;
+  a.mtime = inode->mtime;
+  a.size = inode->size;
+  a.type = inode->type;
   return;
 }
 
